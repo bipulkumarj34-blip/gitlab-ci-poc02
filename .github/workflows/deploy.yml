@@ -9,6 +9,7 @@ on:
 
 jobs:
   # --- 1. NEW DEVSECOPS STAGE (Runs on your Mac) ---
+  #a test comment
   security_and_quality:
     name: Security & Code Quality Scans
     runs-on: self-hosted # <--- Tells GitHub to use your Mac terminal
