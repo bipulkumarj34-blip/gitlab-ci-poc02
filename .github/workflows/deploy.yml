@@ -1,0 +1,78 @@
+name: CI/CD DevSecOps POC
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/*'
+
+jobs:
+  # --- 1. NEW DEVSECOPS STAGE (Runs on your Mac) ---
+  security_and_quality:
+    name: Security & Code Quality Scans
+    runs-on: self-hosted # <--- Tells GitHub to use your Mac terminal
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Dependency Scan (npm audit)
+        run: npm audit --json > dependency-report.json || true
+
+      - name: Upload Dependency Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan-report
+          path: dependency-report.json
+
+      # Local SonarQube Scan
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  # --- 2. BUILD STAGE (Runs on GitHub's Cloud) ---
+  build:
+    needs: security_and_quality # <--- Wait for security scan to finish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: npm install
+      - name: Build logic
+        run: echo "Building application..."
+
+  # --- 3. DEPLOY TO DEV ---
+  deploy-dev:
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Deploy to Dev
+        run: |
+          echo "Deploying to DEV environment"
+          echo "Secret Key is: ${{ secrets.API_KEY }}"
+
+  # --- 4. DEPLOY TO PROD ---
+  deploy-prod:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Deploy to Production
+        run: |
+          echo "Deploying to PROD environment"
+          echo "Secret Key is: ${{ secrets.API_KEY }}"
