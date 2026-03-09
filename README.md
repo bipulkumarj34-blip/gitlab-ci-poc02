@@ -1,15 +1,10 @@
-=========================================================
 DEVSECOPS LOCAL ENVIRONMENT - OPERATIONS MANUAL
-=========================================================
 
-This document outlines how to start and stop the local 
-infrastructure required for the CI/CD pipeline.
+This document outlines how to start and stop the local infrastructure required for the CI/CD pipeline.
 
----------------------------------------------------------
 PART 1: HOW TO START THE ENVIRONMENT
 ---------------------------------------------------------
-Execute these steps before pushing code to GitHub to 
-ensure your local runner and security scanners are ready.
+Execute these steps before pushing code to GitHub to ensure your local runner and security scanners are ready.
 
 1. Start Container Runtime:
    - Open the "Rancher Desktop" application on your Mac.
@@ -18,13 +13,12 @@ ensure your local runner and security scanners are ready.
 2. Start Local SonarQube Server:
    - If you run SonarQube via Docker:
      Open a terminal and run:
-     docker start sonarqube
-     (Or whatever name you gave your Sonar container)
+        docker start sonarqube (Or whatever name you gave your Sonar container)
    
    - If you downloaded the SonarQube ZIP file:
      Open a terminal, navigate to the SonarQube folder, and run:
-     cd bin/macosx-universal-64
-     ./sonar.sh start
+        cd bin/macosx-universal-64
+        ./sonar.sh start
 
    - Verification: Go to http://localhost:9000 in your browser.
 
@@ -41,11 +35,9 @@ ensure your local runner and security scanners are ready.
      pick up the jobs and execute the pipeline.
 
 
----------------------------------------------------------
 PART 2: HOW TO STOP THE ENVIRONMENT
 ---------------------------------------------------------
-Execute these steps to free up your Mac's CPU and memory 
-when you are done working.
+Execute these steps to free up your Mac's CPU and memory when you are done working.
 
 1. Stop the GitHub Actions Runner:
    - Go to the terminal window running `./run.sh`.
@@ -55,7 +47,7 @@ when you are done working.
 2. Stop the Local SonarQube Server:
    - If you run SonarQube via Docker:
      Open a terminal and run:
-     docker stop sonarqube
+      docker stop sonarqube
    
    - If you run SonarQube via the ZIP script:
      Open a terminal, navigate to the SonarQube bin folder:
@@ -68,7 +60,4 @@ when you are done working.
      docker stop <CONTAINER_ID>
 
 4. Stop Container Runtime:
-   - Click the Rancher Desktop icon in your Mac's menu bar 
-     (top right) and select "Quit Rancher Desktop".
-
-=========================================================
+   - Click the Rancher Desktop icon in your Mac's menu bar (top right) and select "Quit Rancher Desktop".

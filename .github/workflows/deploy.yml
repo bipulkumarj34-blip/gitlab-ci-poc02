@@ -8,17 +8,19 @@ on:
       - 'feature/*'
 
 jobs:
-  # --- 1. NEW DEVSECOPS STAGE (Runs on your Mac) ---
-  #a test comment
+  # --- 1. NEW DEVSECOPS STAGE ---
   security_and_quality:
     name: Security & Code Quality Scans
-    runs-on: self-hosted # <--- Tells GitHub to use your Mac terminal
+    runs-on: self-hosted # <--- Run on self-hosted runner for local scans
+    
     steps:
+    # --- 1.1 Local Scans (SonarQube + Dependency Scan) ---
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 
         with:
-          fetch-depth: 0
-
+          fetch-depth: 0 # <--- Fetch full history for better SonarQube analysis
+    
+    # --- 1.2 Setup Node.js ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -30,6 +32,7 @@ jobs:
       - name: Run Dependency Scan (npm audit)
         run: npm audit --json > dependency-report.json || true
 
+    # --- 1.4 Upload Dependency Report ---
       - name: Upload Dependency Report Artifact
         uses: actions/upload-artifact@v4
         with:

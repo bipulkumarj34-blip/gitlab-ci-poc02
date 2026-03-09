@@ -1,0 +1,210 @@
+Technical Implementation Guide: DevSecOps CI/CD Pipeline
+
+1. Executive Summary
+--------------------------
+This document details the implementation of a Proof of Concept (POC) for a branch-based, DevSecOps-enabled CI/CD pipeline using GitHub Actions. The pipeline enforces "shift-left" security by integrating Software Composition Analysis (SCA) and Static Application Security Testing (SAST) before the build and deployment phases.
+
+Primary Objectives:
+--------------------------
+* Block vulnerable dependencies and insecure code from reaching production.
+* Dynamically route deployments to Development or Production environments based on the Git branch.
+* Securely inject environment-specific secrets at runtime.
+
+2. Architecture & Toolchain
+----------------------------------------------------
+2.1 Core Technologies
+------------------------------
+* Version Control & Orchestration: GitHub / GitHub Actions
+* Compute / Runner Engine: GitHub Self-Hosted Runner (macOS, local execution)
+* Application Runtime: Node.js (v20)
+* Containerization: Docker (managed via Rancher Desktop)
+* SAST / Code Quality: SonarQube (Self-hosted on localhost:9000)
+* SCA (Dependency Scanning): npm audit
+
+2.2 Pipeline Workflow Logic
+------------------------------
+1. Developer Commits Code: Triggers the GitHub Action.
+2. Stage 1: Security Gate (Self-Hosted Runner)
+    * Runs npm audit to check for known vulnerabilities in package.json.
+    * Runs SonarQube Scanner to check for code smells, bugs, and hardcoded secrets.
+    * Action: If either step fails, the pipeline aborts immediately.
+3. Stage 2: Build (Cloud Runner)
+    * Waits for Stage 1 to pass. Installs dependencies.
+4. Stage 3: Environment-Aware Deployment (Cloud Runner)
+    * main branch → Requests the prod GitHub Environment → Injects prod secrets.
+    * develop branch → Requests the dev GitHub Environment → Injects dev secrets.
+
+3. Prerequisites & Local Setup
+----------------------------------------------------
+To run this pipeline locally, the host machine (Mac) requires:
+1. Node.js (v20+): Required for compatibility with the latest SonarQube analyzers.
+2. Rancher Desktop: Set to use dockerd (moby) as the container engine.
+3. SonarQube Instance: Running locally on port 9000.
+4. GitHub Self-Hosted Runner: Configured and actively listening for jobs in the background (./run.sh).
+
+4. Configuration & Source Code
+----------------------------------------------------
+4.1 Application Code
+------------------------------
+The application is a lightweight Node.js web server that serves a dynamic HTML dashboard.
+index.js
+
+    const http = require('http');
+    const fs = require('fs');
+    const path = require('path');
+
+    const PORT = process.env.PORT || 3000;
+    const ENV_NAME = process.env.APP_ENV || 'Local';
+    const SECRET_VAL = process.env.API_KEY || 'no-secret-found';
+
+    const server = http.createServer((req, res) => {
+        fs.readFile(path.join(__dirname, 'index.html'), 'utf8', (err, data) => {
+            if (err) {
+                res.writeHead(500);
+                return res.end('Error loading index.html');
+            }
+            let result = data
+                .replace('{{ENV_NAME}}', ENV_NAME)
+                .replace('{{SECRET_KEY}}', SECRET_VAL);
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(result);
+        });
+    });
+
+    server.listen(PORT, () => {
+        console.log(`Server running at http://localhost:${PORT}/`);
+    });
+
+Dockerfile
+
+    FROM node:20-slim
+    WORKDIR /app
+    COPY package*.json ./
+    RUN npm install
+    COPY . .
+    EXPOSE 3000
+    CMD ["node", "index.js"]
+
+4.2 SonarQube Configuration
+------------------------------
+To ensure the local SonarQube scanner maps the analysis to the correct project dashboard, the following configuration must be present in the repository root.
+sonar-project.properties
+
+    sonar.projectKey=devsecops-poc
+    sonar.projectName=DevSecOps POC
+    sonar.sources=.
+    sonar.exclusions=node_modules/**, .github/**
+    
+4.3 GitHub Settings (Environments & Secrets)
+----------------------------------------------
+The following must be configured directly in the GitHub Repository Settings:
+Settings → Environments:
+* Create dev (Linked to develop branch rule). Add Environment Secret: API_KEY = DEV_SECRET_PASSWORD
+* Create prod (Linked to main branch rule). Add Environment Secret: API_KEY = PROD_SECRET_PASSWORD
+Settings → Secrets and variables → Actions:
+* SONAR_TOKEN: Authentication token generated from the local SonarQube admin panel.
+* SONAR_HOST_URL: Set to http://localhost:9000 (or the host's local IP address).
+
+4.4 The CI/CD Pipeline
+------------------------------
+This is the core orchestration file.
+.github/workflows/deploy.yml
+
+    name: CI/CD DevSecOps POC
+
+    on:
+      push:
+        branches:
+          - main
+          - develop
+          - 'feature/*'
+
+    jobs:
+  # STAGE 1: Security & Quality (Runs locally on Mac)
+  security_and_quality:
+    name: Security & Code Quality Scans
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Dependency Scan (npm audit)
+        run: npm audit --audit-level=high --json > dependency-report.json || true
+
+      - name: Upload Dependency Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan-report
+          path: dependency-report.json
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  # STAGE 2: Build App
+  build:
+    needs: security_and_quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: npm install
+      - name: Build logic
+        run: echo "Building application..."
+
+  # STAGE 3A: Deploy to Development
+  deploy-dev:
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Deploy to Dev
+        run: |
+          echo "Deploying to DEV environment"
+          echo "Secret Key is: ${{ secrets.API_KEY }}"
+
+  # STAGE 3B: Deploy to Production
+  deploy-prod:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Deploy to Production
+        run: |
+          echo "Deploying to PROD environment"
+          echo "Secret Key is: ${{ secrets.API_KEY }}"
+
+5. Known Issues & Troubleshooting
+----------------------------------------------------
+Issue / Error Log	Root Cause	Resolution
+TypeError: e.split(...).toReversed is not a function	SonarQube's bridge-bundle requires Node v20+, but the runner was provisioned with v18.	Update the actions/setup-node@v4 step in the pipeline to use node-version: '20'.
+
+ERROR You must define the following mandatory properties... sonar.projectKey	The SonarQube scanner does not know where to push the analysis data.	Create a sonar-project.properties file in the root directory and define sonar.projectKey.
+
+Runner config fails with: A valid runner name is 64 characters or less...	The user entered ./run.sh into the runner name prompt during the config.sh setup.	Re-run ./config.sh and press Enter to accept the default runner name (the host machine's name). Then execute ./run.sh.
+
+6. Daily Operations (Runbook)
+----------------------------------------------------
+To Start Infrastructure:
+  1. Start Rancher Desktop.
+  2. Start SonarQube (docker start sonarqube OR ./sonar.sh start).
+  3. Start the GitHub Runner (navigate to runner folder, execute ./run.sh).
+
+To Stop Infrastructure:
+  1. Press Ctrl + C in the GitHub Runner terminal.
+  2. Stop SonarQube (docker stop sonarqube OR ./sonar.sh stop).
+  3. Quit Rancher Desktop via the Mac menu bar.
